@@ -1,1 +1,220 @@
-GG.come
+//-------------------------------------------------------------------PlayerMovement-----------------------------------------------------------------------------------
+
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class PlayerMovement : MonoBehaviour
+{
+    private Rigidbody2D body;
+    [SerializeField]private float speed;
+    [SerializeField] private float jumpPower;
+    private Animator animator;
+    private BoxCollider2D boxCollider;
+    [SerializeField]private LayerMask groundLayer;
+    [SerializeField] private LayerMask wallLayer;
+    private float wallJumpCooldown;
+    private float horizontalInput;
+
+
+    private void Awake()
+    {
+        body = GetComponent<Rigidbody2D>();
+        animator = GetComponent<Animator>();
+        boxCollider = GetComponent<BoxCollider2D>();
+    }
+
+    private void Update()
+    {
+        horizontalInput = Input.GetAxis("Horizontal");
+        
+        //flip player when move left
+        if (horizontalInput > 0.01f)
+            transform.localScale = Vector3.one;
+        else if (horizontalInput < -0.01f)
+            transform.localScale = new Vector3(-1, 1, 1);
+
+        
+
+        animator.SetBool("run", horizontalInput != 0);
+        animator.SetBool("grounded", isGrounded());
+
+        if (wallJumpCooldown > 0.2f)
+        {
+            
+
+            body.velocity = new Vector2(horizontalInput * speed, body.velocity.y);
+
+            if (onWall() && !isGrounded())
+            {
+                body.gravityScale = 0;
+                body.velocity = Vector2.zero;
+            }
+            else
+                body.gravityScale = 7;
+
+            if (Input.GetKey(KeyCode.Space))
+                Jump();
+        }
+        else
+            wallJumpCooldown += Time.deltaTime;
+    }
+
+    private void Jump()
+    {
+        if (isGrounded())
+        {
+            body.velocity = new Vector2(body.velocity.x, jumpPower);
+            animator.SetTrigger("jump");
+        }
+        else if (onWall() && !isGrounded())
+        {
+            if(horizontalInput == 0)
+            {
+                body.velocity = new Vector2(-Mathf.Sign(transform.localScale.x) * 10, 0);   // the mathf.sign returns 1 for +ve(right side), -1 for -ve(left side)
+                transform.localScale = new Vector3(-Mathf.Sign(transform.localScale.x), transform.localScale.y, transform.localScale.z);
+            }
+            else
+                body.velocity = new Vector2(-Mathf.Sign(transform.localScale.x) * 3, 6);   // the mathf.sign returns 1 for +ve(right side), -1 for -ve(left side)
+
+            wallJumpCooldown = 0;
+        }
+       
+    }
+
+    
+
+    private bool isGrounded()
+    {
+        RaycastHit2D raycastHit = Physics2D.BoxCast(boxCollider.bounds.center, boxCollider.bounds.size, 0, Vector2.down, 0.1f, groundLayer);
+        return raycastHit.collider != null;
+    }
+
+    private bool onWall()
+    {
+        RaycastHit2D raycastHit = Physics2D.BoxCast(boxCollider.bounds.center, boxCollider.bounds.size, 0, new Vector2(transform.localScale.x, 0), 0.1f, wallLayer);
+        return raycastHit.collider != null;
+    }
+
+    public bool canAttack()
+    {
+        return horizontalInput == 0 && isGrounded() && !onWall();
+    }
+}
+
+//---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+//-------------------------------------------------------------------------PlayerAttack--------------------------------------------------------------------------------
+
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class PlayerAttack : MonoBehaviour
+{
+    [SerializeField] private float attackCooldown;
+    [SerializeField] private Transform firePoint;
+    [SerializeField] private GameObject[] fireballs;
+
+    private Animator animator;
+    private PlayerMovement playerMovement;
+    private float cooldownTimer = Mathf.Infinity;
+
+    private void Awake()
+    {
+        animator = GetComponent<Animator>();
+        playerMovement = GetComponent<PlayerMovement>();
+    }
+
+    private void Update()
+    {
+        if (Input.GetMouseButton(0) && cooldownTimer > attackCooldown && playerMovement.canAttack())
+            AttacK();
+
+        cooldownTimer += Time.deltaTime;
+    }
+
+    private void AttacK()
+    {
+        animator.SetTrigger("attack");
+        cooldownTimer = 0;
+
+        fireballs[FindFireball()].transform.position = firePoint.position;
+        fireballs[FindFireball()].GetComponent<ProjectTile>().SetDirection(Mathf.Sign(transform.localScale.x));
+    }
+
+    private int FindFireball()
+    {
+        for (int i =0; i < fireballs.Length; i++)
+        {
+            if (!fireballs[i].activeInHierarchy)
+                return i;
+        }
+        return 0;
+    }
+}
+
+
+
+//---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+//-------------------------------------------------------------------------------ProjectTile---------------------------------------------------------------------------
+
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class ProjectTile : MonoBehaviour
+{
+    [SerializeField] private float speed;
+    private float direction;
+    private bool hit;
+    private float lifetime;
+
+    private Animator animator;
+    private BoxCollider2D boxCollider;
+
+    private void Awake()
+    {
+        animator = GetComponent<Animator>();
+        boxCollider = GetComponent<BoxCollider2D>();
+    }
+
+    private void Update()
+    {
+        if (hit) return;
+        float movementSpeed = speed * Time.deltaTime * direction;
+        transform.Translate(movementSpeed, 0, 0);
+
+        lifetime += Time.deltaTime;
+        if (lifetime > 5) gameObject.SetActive(false);
+    }
+
+    private void OnTriggerEnter2D(Collider2D collision)
+    {
+        hit = true;
+        boxCollider.enabled = true;
+        animator.SetTrigger("explode");
+    }
+
+    public void SetDirection(float _direction)
+    {
+        lifetime = 0;
+        direction = _direction;
+        gameObject.SetActive(true);
+        hit = false;
+        boxCollider.enabled = true;
+
+        float localScaleX = transform.localScale.x;
+        if (Mathf.Sign(localScaleX) != _direction)
+            localScaleX = -localScaleX;
+
+        transform.localScale = new Vector3(localScaleX, transform.localScale.y, transform.localScale.z);
+    }
+
+    private void Deactivate()
+    {
+        gameObject.SetActive(false);
+    }
+}
+
